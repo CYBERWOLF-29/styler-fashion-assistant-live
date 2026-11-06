@@ -299,8 +299,17 @@ def home_page() -> None:
     st.header("Home")
     profile = st.session_state.profile
     name = profile.get("name") or profile.get("preferred_nickname") or "Stylist"
+    if not st.session_state.voice_last_outfit and st.session_state.wardrobe:
+        initial_recommendations = generate_outfit_recommendations(
+            profile,
+            st.session_state.wardrobe,
+            profile.get("default_occasion", settings.DEFAULT_OCCASION),
+        )
+        if initial_recommendations:
+            st.session_state.voice_last_outfit = initial_recommendations[0]
+            st.session_state.voice_last_occasion = profile.get("default_occasion", settings.DEFAULT_OCCASION)
     if is_demo_mode():
-        st.info("Public demo mode: your profile and wardrobe are temporary to this browser session and are not saved to shared storage.")
+        st.info("Public demo with sample wardrobe: changes are temporary to this browser session and are not saved.")
 
     st.markdown(
         """
@@ -386,7 +395,11 @@ def home_page() -> None:
         st.info(f"Budget range: ${profile.get('budget_range', '150-350')}")
 
     st.markdown("### Style suggestions")
-    recs = generate_outfit_recommendations(profile, st.session_state.wardrobe)
+    recs = generate_outfit_recommendations(
+        profile,
+        st.session_state.wardrobe,
+        profile.get("default_occasion", settings.DEFAULT_OCCASION),
+    )
     for rec in recs:
         st.markdown(
             f"<div class='luxury-panel' style='margin-bottom:0.8rem;'><strong>{rec['top']}</strong> + <strong>{rec['bottom']}</strong> — <span style='color:#7a5d47;font-weight:700;'>{rec['score']}</span> match<br><span style='color:#4b3b32;'>{rec['note']}</span></div>",

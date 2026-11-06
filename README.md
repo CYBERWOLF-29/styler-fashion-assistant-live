@@ -25,7 +25,7 @@ STYLER is a modular Streamlit-based personal fashion assistant that helps users 
    ```toml
    STYLER_DEMO_MODE = "true"
    ```
-4. Deploy. The demo starts with a clean profile and keeps changes only in the current Streamlit browser session. Shared local-file persistence is disabled.
+4. Deploy. The demo starts with a fictional sample profile and wardrobe so the dashboard and outfit recommendations are visible immediately. Changes stay only in the current Streamlit browser session. Shared local-file persistence is disabled.
 
 The public demo is for sample data only. It has no account authentication or private database, so do not enter sensitive personal information. For durable per-user wardrobes and photo storage, integrate Supabase authentication, row-level security, and private storage before enabling persistent multi-user use.
 
