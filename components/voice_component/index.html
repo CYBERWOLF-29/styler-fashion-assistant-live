@@ -1,0 +1,277 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 8px 4px;
+      background: transparent;
+      color: #38291f;
+      font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .voice-shell {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-height: 132px;
+      padding: 20px;
+      border: 1px solid rgba(115, 82, 59, .15);
+      border-radius: 22px;
+      background: linear-gradient(140deg, #fffdfa, #f3e8dc);
+      box-shadow: 0 12px 30px rgba(62, 41, 31, .1);
+    }
+    .orb {
+      display: grid;
+      flex: 0 0 74px;
+      width: 74px;
+      height: 74px;
+      place-items: center;
+      border: 1px solid rgba(185, 152, 90, .45);
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, #e8d4b0, #6b4c39 72%);
+      color: white;
+      font-size: 25px;
+      box-shadow: 0 0 0 8px rgba(185, 152, 90, .09), 0 8px 24px rgba(92, 67, 53, .2);
+    }
+    .listening .orb {
+      animation: pulse 1.8s ease-out infinite;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 4px rgba(185, 152, 90, .16), 0 8px 24px rgba(92, 67, 53, .2); }
+      70% { box-shadow: 0 0 0 15px rgba(185, 152, 90, 0), 0 8px 24px rgba(92, 67, 53, .2); }
+      100% { box-shadow: 0 0 0 4px rgba(185, 152, 90, 0), 0 8px 24px rgba(92, 67, 53, .2); }
+    }
+    .copy { flex: 1; min-width: 0; }
+    .eyebrow {
+      color: #876847;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    .title { margin: 3px 0; font-size: 19px; font-weight: 700; letter-spacing: -.03em; }
+    .status { color: #75665b; font-size: 12px; }
+    .transcript {
+      overflow: hidden;
+      margin-top: 5px;
+      color: #544338;
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    button {
+      flex: 0 0 auto;
+      min-width: 116px;
+      padding: 11px 16px;
+      border: 0;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #5c4335, #8d6f58);
+      box-shadow: 0 8px 18px rgba(92, 67, 53, .18);
+      color: white;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 650;
+    }
+    button:focus-visible { outline: 3px solid #c9a96d; outline-offset: 3px; }
+    button.stop { background: #e8ddd3; box-shadow: none; color: #513c2e; }
+    @media (max-width: 560px) {
+      .voice-shell { flex-wrap: wrap; gap: 12px; padding: 16px; }
+      .orb { flex-basis: 58px; width: 58px; height: 58px; font-size: 21px; }
+      .copy { min-width: calc(100% - 78px); }
+      button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div id="shell" class="voice-shell">
+    <div class="orb" aria-hidden="true">✦</div>
+    <div class="copy">
+      <div class="eyebrow">STYLER Voice</div>
+      <div class="title">Your personal stylist, on call</div>
+      <div id="status" class="status">Microphone is off. Start listening to enable “Hey STYLER”.</div>
+      <div id="transcript" class="transcript" aria-live="polite"></div>
+    </div>
+    <button id="toggle" type="button">Start listening</button>
+  </div>
+  <script>
+    const shell = document.getElementById("shell");
+    const statusLine = document.getElementById("status");
+    const transcriptLine = document.getElementById("transcript");
+    const toggleButton = document.getElementById("toggle");
+    let recognition = null;
+    let listening = false;
+    let waitingForCommand = false;
+    let speechActive = false;
+    let restartTimer = null;
+    let lastResponseId = "";
+    let language = "en-US";
+    let nextEventId = 0;
+
+    function setValue(value) {
+      window.parent.postMessage({
+        isStreamlitMessage: true,
+        type: "streamlit:setComponentValue",
+        value: value,
+        dataType: "json"
+      }, "*");
+    }
+
+    function setHeight() {
+      window.requestAnimationFrame(() => {
+        window.parent.postMessage({
+          isStreamlitMessage: true,
+          type: "streamlit:setFrameHeight",
+          height: document.body.scrollHeight
+        }, "*");
+      });
+    }
+
+    function speak(text) {
+      if (!("speechSynthesis" in window) || !text) return;
+      window.speechSynthesis.cancel();
+      speechActive = true;
+      if (recognition && listening) recognition.stop();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = language;
+      utterance.onend = () => {
+        speechActive = false;
+        if (listening) restartTimer = window.setTimeout(startRecognition, 350);
+      };
+      utterance.onerror = () => {
+        speechActive = false;
+        if (listening) restartTimer = window.setTimeout(startRecognition, 350);
+      };
+      window.speechSynthesis.speak(utterance);
+    }
+
+    function showListeningState() {
+      shell.classList.toggle("listening", listening);
+      toggleButton.textContent = listening ? "Stop listening" : "Start listening";
+      toggleButton.classList.toggle("stop", listening);
+      statusLine.textContent = listening
+        ? (waitingForCommand ? "I’m listening for your request…" : "Microphone active · say “Hey STYLER”")
+        : "Microphone is off. Start listening to enable “Hey STYLER”.";
+    }
+
+    function submitCommand(text) {
+      const command = text.trim();
+      if (!command) return;
+      transcriptLine.textContent = "Heard: “" + command + "”";
+      waitingForCommand = false;
+      showListeningState();
+      setValue({ id: String(Date.now()) + "-" + (++nextEventId), text: command });
+    }
+
+    function handleTranscript(text) {
+      const transcript = text.trim();
+      if (!transcript) return;
+      transcriptLine.textContent = "Heard: “" + transcript + "”";
+      const wakePattern = /\b(?:hey|hi)\s+styler\b/i;
+      const wake = wakePattern.exec(transcript);
+      if (wake) {
+        const command = transcript.slice(wake.index + wake[0].length).replace(/^[\s,.:;!?-]+/, "").trim();
+        if (command) {
+          submitCommand(command);
+        } else {
+          waitingForCommand = true;
+          showListeningState();
+          speak("I’m listening. What would you like to wear?");
+        }
+        return;
+      }
+      if (waitingForCommand) submitCommand(transcript);
+    }
+
+    function startRecognition() {
+      if (!recognition || !listening) return;
+      try {
+        recognition.start();
+      } catch (error) {
+        if (error.name !== "InvalidStateError") {
+          statusLine.textContent = "Could not start the microphone. Check browser permissions and try again.";
+        }
+      }
+    }
+
+    function startListening() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        statusLine.textContent = "Voice recognition is unavailable. Use the text command below or try Chrome/Edge.";
+        return;
+      }
+      recognition = new SpeechRecognition();
+      recognition.lang = language;
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.onresult = (event) => {
+        if (speechActive) return;
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          if (event.results[i].isFinal) handleTranscript(event.results[i][0].transcript);
+        }
+      };
+      recognition.onerror = (event) => {
+        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+          listening = false;
+          statusLine.textContent = "Microphone permission was denied. Allow microphone access in browser settings.";
+          showListeningState();
+        } else if (event.error === "audio-capture") {
+          listening = false;
+          statusLine.textContent = "No microphone was found. Connect a microphone and try again.";
+          showListeningState();
+        } else if (event.error === "network") {
+          listening = false;
+          statusLine.textContent = "The browser speech service is unavailable. Try again or use the text command.";
+          showListeningState();
+        }
+      };
+      recognition.onend = () => {
+        if (listening && !speechActive) restartTimer = window.setTimeout(startRecognition, 400);
+      };
+      listening = true;
+      showListeningState();
+      startRecognition();
+    }
+
+    function stopListening() {
+      listening = false;
+      waitingForCommand = false;
+      window.clearTimeout(restartTimer);
+      if (recognition) recognition.stop();
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      showListeningState();
+    }
+
+    toggleButton.addEventListener("click", () => {
+      if (listening) stopListening();
+      else startListening();
+    });
+
+    window.addEventListener("message", (event) => {
+      if (event.data.type === "streamlit:render") {
+        const args = event.data.args || {};
+        language = args.language || "en-US";
+        setHeight();
+        const responseId = args.response_id || "";
+        if (args.response && responseId && responseId !== lastResponseId) {
+          lastResponseId = responseId;
+          speak(args.response);
+        }
+      }
+    });
+
+    window.parent.postMessage({
+      isStreamlitMessage: true,
+      type: "streamlit:componentReady",
+      apiVersion: 1
+    }, "*");
+    setHeight();
+    window.addEventListener("load", () => window.setTimeout(setHeight, 100));
+    if ("ResizeObserver" in window) {
+      new ResizeObserver(setHeight).observe(document.body);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+.env
+.streamlit/secrets.toml
+__pycache__/
+*.py[cod]
+data/*.json
+assets/uploads/
+.venv/
+venv/
+.pytest_cache/
+.streamlit/config.toml.bak
